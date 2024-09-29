@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     RANDOM_TAPS_COUNT: list[int] = [50, 200]
     SLEEP_BETWEEN_TAP: list[int] = [10, 25]
 
+    REF_ID: str = 'omwKkG'
+
     USE_PROXY_FROM_FILE: bool = False
 
 

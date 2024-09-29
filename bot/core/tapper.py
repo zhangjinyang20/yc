@@ -1,6 +1,8 @@
 import asyncio
-from time import time
+import random
+from datetime import datetime
 from random import randint
+from time import time
 from urllib.parse import unquote
 
 import aiohttp
@@ -12,8 +14,8 @@ from pyrogram.raw.functions.messages import RequestAppWebView
 from pyrogram.raw.types import InputBotAppShortName
 
 from bot.config import settings
-from bot.utils import logger
 from bot.exceptions import InvalidSession
+from bot.utils import logger
 from .headers import headers
 
 
@@ -36,7 +38,6 @@ class Tapper:
             proxy_dict = None
 
         self.tg_client.proxy = proxy_dict
-
         try:
             with_tg = True
 
@@ -53,7 +54,8 @@ class Tapper:
                 peer=bot,
                 app=app,
                 platform='android',
-                write_allowed=True
+                write_allowed=True,
+                start_param=settings.REF_ID
             ))
 
             auth_url = web_view.url
@@ -252,7 +254,7 @@ class Tapper:
                         access_token_created_time = time()
 
                         profile_data = await self.get_profile_data(http_client=http_client)
-
+                        await self.yaoqing(http_client=http_client)
                         balance = profile_data['currentAmount']
                         rank = profile_data['rank']
                         level = profile_data['userLevel']
@@ -262,7 +264,6 @@ class Tapper:
                                     f"Invite amount: <y>{invite_amount}</y>")
 
                     taps = randint(a=settings.RANDOM_TAPS_COUNT[0], b=settings.RANDOM_TAPS_COUNT[1])
-
                     game_data = await self.get_game_data(http_client=http_client)
 
                     available_energy = game_data['coinPoolLeftCount']
@@ -362,6 +363,18 @@ class Tapper:
 
                             continue
 
+                        try:
+                            # 做任务1
+                            await self.doTask(http_client=http_client)
+                            # 做任务2
+                            await self.doNewTask(http_client=http_client)
+                            # 做任务3
+                            await self.doNewTask1(http_client=http_client)
+                            # 签到
+                            # await self.sign(http_client=http_client)
+                        except InvalidSession as error:
+                            logger.info(f"{self.session_name} | 做任务出现异常!")
+
                         if (settings.AUTO_UPGRADE_CHARGE is True
                                 and balance > next_charge_price
                                 and next_charge_level <= settings.MAX_CHARGE_LEVEL):
@@ -376,7 +389,6 @@ class Tapper:
                                 await asyncio.sleep(delay=1)
 
                             continue
-
                         if available_energy < settings.MIN_AVAILABLE_ENERGY:
                             logger.info(f"{self.session_name} | Minimum energy reached: {available_energy}")
                             logger.info(f"{self.session_name} | Sleep {settings.SLEEP_BY_MIN_ENERGY}s")
@@ -400,6 +412,166 @@ class Tapper:
 
                     logger.info(f"Sleep {sleep_between_clicks}s")
                     await asyncio.sleep(delay=sleep_between_clicks)
+
+    async def doTask(self, http_client: aiohttp.ClientSession):
+        try:
+            response = await http_client.get(url='https://api-backend.yescoin.gold/mission/getDailyMission')
+            response.raise_for_status()
+            response_json = await response.json()
+            taskList = response_json['data']
+            for ts in taskList:
+                if ts['missionStatus'] == 0 and ts['checkStatus'] == 0:
+                    # start
+                    response = await http_client.post(
+                        url='https://api-backend.yescoin.gold/mission/clickDailyMission',
+                        json=ts['missionId'])
+                    response.raise_for_status()
+                    response_json = await response.json()
+                    if response_json['data'] is True:
+                        response = await http_client.post(
+                            url='https://api-backend.yescoin.gold/mission/checkDailyMission',
+                            json=ts['missionId'])
+                        response.raise_for_status()
+                        response_json = await response.json()
+                        if response_json['data'] is True:
+                            try:
+                                response = await http_client.post(
+                                    url='https://api-backend.yescoin.gold/mission/claimReward',
+                                    json=ts['missionId'])
+                                response.raise_for_status()
+                                response_json = await response.json()
+                                if response_json['data'] is True:
+                                    logger.info(f"{ts['name']}任务完成!")
+                            except Exception as error:
+                                await asyncio.sleep(delay=3)
+        except Exception as error:
+            await asyncio.sleep(delay=3)
+
+            return False
+
+    async def sign(self, http_client):
+        try:
+            response = await http_client.get(url='https://api-backend.yescoin.gold/signIn/list')
+            response.raise_for_status()
+            response_json = await response.json()
+            signList = response_json['data']
+            for sl in signList:
+                if sl['checkIn'] == 0:
+                    signParam = {
+                        "id": sl['id'],
+                        "createAt": datetime.now().timestamp(),
+                        "signInType": sl['signInLevel'],
+                        "destination": ""
+                    }
+                    response = await http_client.post(
+                        url='https://api-backend.yescoin.gold/signIn/claim',
+                        json=signParam)
+                    response.raise_for_status()
+                    response_json = await response.json()
+                    if response_json['data']['status'] is True:
+                        logger.info(f"{self.session_name} | 签到成功!")
+        except Exception as error:
+            await asyncio.sleep(delay=3)
+
+            return False
+
+    async def doNewTask(self, http_client: aiohttp.ClientSession):
+        response = await http_client.get(url='https://api-backend.yescoin.gold/task/getTaskList')
+        response.raise_for_status()
+        response_json = await response.json()
+        taskList = response_json['data']['taskList']
+        for ts in taskList:
+            if ts['taskStatus'] == 0:
+                random_delay = random.randint(1, 3)
+                logger.info(
+                    f"{self.tg_client.name} | Bot will start in <light-red>{random_delay}s</light-red>")
+                await asyncio.sleep(delay=random_delay)
+                # start
+                response = await http_client.post(
+                    url='https://api-backend.yescoin.gold/task/clickTask',
+                    json=ts['taskId'])
+                response.raise_for_status()
+                response_json = await response.json()
+                if response_json['data'] is True:
+                    random_delay = random.randint(1, 3)
+                    logger.info(
+                        f"{self.tg_client.name} | Bot will start in <light-red>{random_delay}s</light-red>")
+                    await asyncio.sleep(delay=random_delay)
+                    response = await http_client.post(
+                        url='https://api-backend.yescoin.gold/task/checkTask',
+                        json=ts['taskId'])
+                    response.raise_for_status()
+                    response_json = await response.json()
+                    if response_json['data'] is True:
+                        random_delay = random.randint(1, 3)
+                        logger.info(
+                            f"{self.tg_client.name} | Bot will start in <light-red>{random_delay}s</light-red>")
+                        await asyncio.sleep(delay=random_delay)
+                        try:
+                            response = await http_client.post(
+                                url='https://api-backend.yescoin.gold/task/claimTaskReward',
+                                json=ts['taskId'])
+                            response.raise_for_status()
+                            response_json = await response.json()
+                            if response_json['code'] == 0:
+                                logger.info(f"{ts['taskDescription']}任务完成!")
+                        except Exception as error:
+                            await asyncio.sleep(delay=3)
+
+    async def doNewTask1(self, http_client: aiohttp.ClientSession):
+        response = await http_client.get(url='https://api-backend.yescoin.gold/task/getTaskList')
+        response.raise_for_status()
+        response_json = await response.json()
+        taskList = response_json['data']['specialTaskList']
+        for ts in taskList:
+            if ts['taskStatus'] == 0:
+                random_delay = random.randint(1, 3)
+                logger.info(
+                    f"{self.tg_client.name} | Bot will start in <light-red>{random_delay}s</light-red>")
+                await asyncio.sleep(delay=random_delay)
+                # start
+                response = await http_client.post(
+                    url='https://api-backend.yescoin.gold/task/clickTask',
+                    json=ts['taskId'])
+                response.raise_for_status()
+                response_json = await response.json()
+                if response_json['data'] is True:
+                    random_delay = random.randint(1, 3)
+                    logger.info(
+                        f"{self.tg_client.name} | Bot will start in <light-red>{random_delay}s</light-red>")
+                    await asyncio.sleep(delay=random_delay)
+                    response = await http_client.post(
+                        url='https://api-backend.yescoin.gold/task/checkTask',
+                        json=ts['taskId'])
+                    response.raise_for_status()
+                    response_json = await response.json()
+                    if response_json['data'] is True:
+                        random_delay = random.randint(1, 3)
+                        logger.info(
+                            f"{self.tg_client.name} | Bot will start in <light-red>{random_delay}s</light-red>")
+                        await asyncio.sleep(delay=random_delay)
+                        try:
+                            response = await http_client.post(
+                                url='https://api-backend.yescoin.gold/task/claimTaskReward',
+                                json=ts['taskId'])
+                            response.raise_for_status()
+                            response_json = await response.json()
+                            if response_json['code'] == 0:
+                                logger.info(f"{ts['taskDescription']}任务完成!")
+                        except Exception as error:
+                            await asyncio.sleep(delay=3)
+
+    async def yaoqing(self, http_client: aiohttp.ClientSession):
+        response = await http_client.get(
+            url=f'https://api-backend.yescoin.gold/invite/getInviteGiftBoxInfoWithCode?inviteCode={settings.REF_ID}')
+        response.raise_for_status()
+        response_json = await response.json()
+        if response_json['code'] == 0:
+            ivResponse = await http_client.post(
+                url=f'https://api-backend.yescoin.gold/invite/claimGiftBox?packId={settings.REF_ID}')
+            ivResponse.raise_for_status()
+            ivResponse_json = await ivResponse.json()
+            logger.info(f"邀请完成!{ivResponse_json['data']['claimAmount']}")
 
 
 async def run_tapper(tg_client: Client, proxy: str | None):
