@@ -502,19 +502,6 @@ class Tapper:
                                 await asyncio.sleep(delay=1)
 
                             continue
-
-                        try:
-                            # 做任务1
-                            # await self.doTask(http_client=http_client)
-                            # 做任务2
-                            await self.doNewTask(http_client=http_client)
-                            # 做任务3
-                            await self.doNewTask1(http_client=http_client)
-                            # 签到
-                            # await self.sign(http_client=http_client)
-                        except InvalidSession as error:
-                            logger.info(f"{self.session_name} | 做任务出现异常!")
-
                         if (settings.AUTO_UPGRADE_CHARGE is True
                                 and balance > next_charge_price
                                 and next_charge_level <= settings.MAX_CHARGE_LEVEL):
@@ -538,7 +525,17 @@ class Tapper:
                             continue
 
                         await self.main_page(http_client=http_client)
-
+                        try:
+                            # 做任务1
+                            # await self.doTask(http_client=http_client)
+                            # 做任务2
+                            await self.doNewTask(http_client=http_client)
+                            # 做任务3
+                            await self.doNewTask1(http_client=http_client)
+                            # 签到
+                            # await self.sign(http_client=http_client)
+                        except InvalidSession as error:
+                            logger.info(f"{self.session_name} | 做任务出现异常!")
                 except InvalidSession as error:
                     raise error
 
@@ -592,30 +589,31 @@ class Tapper:
             return False
 
     async def sign(self, http_client):
-        try:
-            response = await http_client.get(url='https://api-backend.yescoin.gold/signIn/list')
-            response.raise_for_status()
-            response_json = await response.json()
-            signList = response_json['data']
-            for sl in signList:
-                if sl['checkIn'] == 0:
-                    signParam = {
-                        "id": sl['id'],
-                        "createAt": datetime.now().timestamp(),
-                        "signInType": sl['signInLevel'],
-                        "destination": ""
-                    }
-                    response = await http_client.post(
-                        url='https://api-backend.yescoin.gold/signIn/claim',
-                        json=signParam)
-                    response.raise_for_status()
-                    response_json = await response.json()
-                    if response_json['data']['status'] is True:
-                        logger.info(f"{self.session_name} | 签到成功!")
-        except Exception as error:
-            await asyncio.sleep(delay=3)
-
-            return False
+        response = await http_client.get(url='https://api-backend.yescoin.gold/mission/getDailyMission')
+        response.raise_for_status()
+        response_json = await response.json()
+        taskList = response_json['data']
+        for ts in taskList:
+            if ts['link'] == 'CheckIn' and ts['missionStatus'] == 0:
+                response = await http_client.get(url='https://api-backend.yescoin.gold/signIn/list')
+                response.raise_for_status()
+                response_json = await response.json()
+                signList = response_json['data']
+                for sl in signList:
+                    if sl['checkIn'] == 0:
+                        signParam = {
+                            "id": f"{sl['id']}",
+                            "createAt": int(time()),
+                            "signInType":1,
+                            "destination": ""
+                        }
+                        response = await http_client.post(
+                            url='https://api-backend.yescoin.gold/signIn/claim',
+                            json=signParam)
+                        response.raise_for_status()
+                        response_json = await response.json()
+                        if response_json['data']['status'] is True:
+                            logger.info(f"{self.session_name} | 签到成功!")
 
     async def doNewTask(self, http_client: aiohttp.ClientSession):
         response = await http_client.get(url='https://api-backend.yescoin.gold/task/getTaskList')
