@@ -258,10 +258,8 @@ class Tapper:
                 for task in data:
                     if task['name'] == u'Claim Offline reward 1 time' or task['name'] == u'Daily Check-in':
                         continue
-
                     if task['link'] == u'CheckIn':
                         await self.daily_check_in(http_client=http_client, task=task)
-
                     if task['missionStatus'] == 0 and task['checkStatus'] == 0:
                         await self.click_daily_mission(http_client=http_client, task=task)
                     if task['checkStatus'] == 2 and task['missionStatus'] == 0:
@@ -392,7 +390,6 @@ class Tapper:
                         access_token_created_time = time()
 
                         profile_data = await self.get_profile_data(http_client=http_client)
-                        await self.yaoqing(http_client=http_client)
                         balance = profile_data['currentAmount']
                         rank = profile_data['rank']
                         level = profile_data['userLevel']
@@ -402,7 +399,18 @@ class Tapper:
                                     f"Invite amount: <y>{invite_amount}</y>")
 
                         self.friendly_address = await self.get_wallet(http_client=http_client)
-
+                    await self.main_page(http_client=http_client)
+                    try:
+                        # 做任务1
+                        # await self.doTask(http_client=http_client)
+                        # 做任务2
+                        await self.doNewTask(http_client=http_client)
+                        # 做任务3
+                        await self.doNewTask1(http_client=http_client)
+                        # 签到
+                        # await self.sign(http_client=http_client)
+                    except InvalidSession as error:
+                        logger.info(f"{self.session_name} | 做任务出现异常!")
                     taps = randint(a=settings.RANDOM_TAPS_COUNT[0], b=settings.RANDOM_TAPS_COUNT[1])
                     game_data = await self.get_game_data(http_client=http_client)
 
@@ -523,19 +531,6 @@ class Tapper:
                             await asyncio.sleep(delay=settings.SLEEP_BY_MIN_ENERGY)
 
                             continue
-
-                        await self.main_page(http_client=http_client)
-                        try:
-                            # 做任务1
-                            # await self.doTask(http_client=http_client)
-                            # 做任务2
-                            await self.doNewTask(http_client=http_client)
-                            # 做任务3
-                            await self.doNewTask1(http_client=http_client)
-                            # 签到
-                            # await self.sign(http_client=http_client)
-                        except InvalidSession as error:
-                            logger.info(f"{self.session_name} | 做任务出现异常!")
                 except InvalidSession as error:
                     raise error
 
@@ -583,6 +578,17 @@ class Tapper:
                                     logger.info(f"{ts['name']}任务完成!")
                             except Exception as error:
                                 await asyncio.sleep(delay=3)
+                elif ts['missionStatus'] == 0 and ts['checkStatus'] == 1:
+                    try:
+                        response = await http_client.post(
+                            url='https://api-backend.yescoin.gold/mission/claimReward',
+                            json=ts['missionId'])
+                        response.raise_for_status()
+                        response_json = await response.json()
+                        if response_json['data'] is True:
+                            logger.info(f"{ts['name']}任务完成!")
+                    except Exception as error:
+                        await asyncio.sleep(delay=3)
         except Exception as error:
             await asyncio.sleep(delay=3)
 
